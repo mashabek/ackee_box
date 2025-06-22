@@ -1,0 +1,18 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Box {
+  id      String  @id
+  code    String  @unique
+  name    String
+  address String
+  lat     Float
+  lng     Float
+  status  String?
+} 
