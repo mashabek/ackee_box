@@ -25,7 +25,7 @@ docker-compose up --build
 It migh take up to a minute to spin up all instances and seed the database.
 
 The API will be available at `http://localhost:3000`
-
+The swagger docs are available at `http://localhost:3000/api-docs`
 
 ## 📋 Results summary 
 
