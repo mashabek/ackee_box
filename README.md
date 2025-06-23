@@ -10,6 +10,7 @@ See [architecture.md](https://github.com/mashabek/ackee_box/blob/master/architec
 - **Technologies Used:** Node.js, TypeScript, Express.js, Prisma, PostgreSQL, PostGIS, Docker, Jest
 - **AI Tools:** GPT 4.1 in Cursor IDE for basic code generation and writing tests.  
 Claude Sonnet 4 for generating mermaid diagrams
+- **Assumptions:** Based on the task, I focused on the nearest boxes endpoint implementation. It is a production ready implementation since it easily scalable and uses spatial index for quick retrieval. This should easily cover 10-20 drivers requesting box locations at the same time. 
 
 ## 🚀 Quick Start
 
