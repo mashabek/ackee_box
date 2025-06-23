@@ -1,6 +1,15 @@
 # Ackee Box - Package Delivery API
 
 A RESTful API for package delivery box management system, built with Node.js, TypeScript, Express, and PostgreSQL with PostGIS for geospatial operations.
+## 📋 Results summary 
+
+See [architecture.md](https://github.com/mashabek/ackee_box/blob/master/architecture.md) for a detailed requirements analysis of the first task.
+
+### Metrics
+- **Time Spent:** ~6 hours
+- **Technologies Used:** Node.js, TypeScript, Express.js, Prisma, PostgreSQL, PostGIS, Docker, Jest
+- **AI Tools:** GPT 4.1 in Cursor IDE for basic code generation and writing tests.  
+Claude Sonnet 4 for generating mermaid diagrams
 
 ## 🚀 Quick Start
 
@@ -26,15 +35,6 @@ It migh take up to a minute to spin up all instances and seed the database.
 
 The API will be available at `http://localhost:3000`
 The swagger docs are available at `http://localhost:3000/api-docs`
-
-## 📋 Results summary 
-
-See `architecture.md` for detailed requirements analysis of the first task.
-
-### Metrics
-- **Time Spent:** ~6 hours
-- **Technologies Used:** Node.js, TypeScript, Express.js, Prisma, PostgreSQL, PostGIS, Docker, Jest
-- **AI Tools:** GPT 4.1 in Cursor IDE for basic code generation and writing tests
 
 ## 📊 Project Overview
 
