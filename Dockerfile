@@ -1,5 +1,4 @@
-# Use official Node.js 18 image
-FROM node:18
+FROM node:alpine AS base
 
 # Set working directory
 WORKDIR /usr/src/app
@@ -13,8 +12,6 @@ RUN npm install
 # Copy the rest of the app source code
 COPY . .
 
+
 # Expose the app port
 EXPOSE 3000
-
-# Start the app in development mode
-CMD ["npm", "run", "dev"] 

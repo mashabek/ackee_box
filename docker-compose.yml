@@ -15,9 +15,9 @@ services:
 
   app:
     build: .
-    command: sh -c "npm install && npm run dev"
-    environment:
-      DATABASE_URL: postgres://ackee:ackee@postgres:5432/ackee_box
+    entrypoint: ["sh", "./entrypoint.sh"]
+    env_file:
+      - .env
     ports:
       - '3000:3000'
     depends_on:
