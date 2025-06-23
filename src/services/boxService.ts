@@ -6,8 +6,10 @@ const boxes: Box[] = [
     code: 'BOX001',
     name: 'Box 1',
     address: '123 Main St, Prague',
-    lat: 50.087451,
-    lng: 14.420671,
+    location: {
+      lat: 50.387451,
+      lng: 14.420672,
+    },
     status: 'active',
   },
   {
@@ -15,8 +17,10 @@ const boxes: Box[] = [
     code: 'BOX002',
     name: 'Box 2',
     address: '456 Side St, Prague',
-    lat: 50.075538,
-    lng: 14.437800,
+    location: {
+      lat: 50.075538,
+      lng: 14.437800,
+    },
     status: 'active',
   },
 ];

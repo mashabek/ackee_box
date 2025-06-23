@@ -1,9 +1,13 @@
+export interface Coordinates {
+  lat: number;
+  lng: number;
+}
+
 export interface Box {
   id: string;
   code: string;
   name: string;
   address: string;
-  lat: number;
-  lng: number;
+  location: Coordinates;
   status?: string;
 } 
