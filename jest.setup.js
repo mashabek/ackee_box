@@ -1,0 +1,1 @@
+process.env.DATABASE_URL = 'postgresql://ackee:ackee@localhost:5432/ackee_box'
