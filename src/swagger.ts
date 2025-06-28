@@ -20,6 +20,14 @@ const options = {
       }
     ],
     components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Enter JWT token obtained from /mock-sso/quick-token or OAuth flow'
+        }
+      },
       schemas: {
         Box: {
           type: 'object',
@@ -72,6 +80,48 @@ const options = {
             }
           }
         },
+        Order: {
+          type: 'object',
+          properties: {
+            id: {
+              type: 'integer',
+              description: 'Order ID',
+              example: 1
+            },
+            externalOrderId: {
+              type: 'string',
+              description: 'External order identifier',
+              example: 'EXT-2024-001'
+            },
+            customerId: {
+              type: 'string',
+              description: 'Customer identifier',
+              example: 'customer-123'
+            },
+            status: {
+              type: 'string',
+              enum: ['pending', 'in_transit', 'delivered', 'picked_up'],
+              description: 'Order status',
+              example: 'pending'
+            },
+            pickupPin: {
+              type: 'string',
+              nullable: true,
+              description: 'PIN for customer pickup',
+              example: '123456'
+            },
+            createdAt: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Creation timestamp'
+            },
+            updatedAt: {
+              type: 'string',
+              format: 'date-time',
+              description: 'Last update timestamp'
+            }
+          }
+        },
         Error: {
           type: 'object',
           properties: {
@@ -82,7 +132,12 @@ const options = {
             }
           }
         }
-      }
+      },
+      security: [
+        {
+          bearerAuth: []
+        }
+      ]
     }
   },
   apis: ['./src/controllers/*.ts', './src/routes/*.ts'], // Path to the API docs
