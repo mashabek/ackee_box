@@ -6,11 +6,12 @@ A RESTful API for package delivery box management system, built with Node.js, Ty
 See [architecture.md](https://github.com/mashabek/ackee_box/blob/master/architecture.md) for a detailed requirements analysis of the first task.
 
 ### Metrics
-- **Time Spent:** 9 hours
+- **Time Spent:** Architecture design + implementation - 8 hours, understanding the 
+task - 2 hours.
 - **Technologies Used:** Node.js, TypeScript, Express.js, Prisma, PostgreSQL, PostGIS, Docker, Jest
 - **AI Tools:** GPT 4.1 in Cursor IDE for basic code generation and writing tests.  
-Claude Sonnet 4 for generating mermaid diagrams
-- **Assumptions:** Based on the task, I focused on the nearest boxes endpoint implementation. It is a production ready implementation since it easily scalable and uses spatial index for quick retrieval. This should easily cover 10-20 drivers requesting box locations at the same time. 
+Claude Sonnet 4 for generating mermaid diagrams, 
+GPT o3 helped me to understand the task, but wasn't too good and also failed to understand the scope of the task.
 
 ## 🚀 Quick Start
 
@@ -56,7 +57,9 @@ curl -H "Authorization: Bearer <your-jwt-token>" \
 - **📍 Geospatial Box Search**: Find nearest delivery boxes with PostGIS indexing
 - **📦 Complete Delivery Workflow**: Reserve → Start → Complete delivery process  
 - **📋 Order Management**: List and update order statuses
-- **🔔 Background Processing**: Message queue for notifications and cleanup tasks
+- **🔔 Background Processing**: Message queue for notifications and cleanup tasks.
+Simple in memory queue was used, but in real world scenario I'd prefer to use Pub/Sub 
+and Cloud Functions.
 - **🔐 JWT Authentication**: Role-based access control (Driver/Customer roles)
 - **📊 Real Data**: 11,000+ delivery boxes across Czech Republic
 
@@ -108,19 +111,9 @@ curl -X POST -H "Authorization: Bearer $TOKEN" \
 ```bash
 npm test
 ```
-
-## 🏗️ Architecture
-
-- **Controllers**: HTTP request handlers with Swagger documentation
-- **Services**: Business logic layer 
-- **Repositories**: Data access layer with Prisma ORM
-- **Background Queue**: Simple message queue for notifications and cleanup
-- **PostGIS**: Spatial database for efficient geolocation queries
-- **Role-based Auth**: JWT with Driver/Customer role separation
-
 ## 📈 Performance & Scalability
 
 - **Spatial Indexing**: PostGIS indexes for sub-second box searches
 - **Background Processing**: Async notification system with simple queue
 - **Auto-cleanup**: Expired reservations cleaned up automatically
-- **Production Ready**: Handles 10-20+ concurrent drivers efficiently
+- **Scalable**: Handles 10-20+ concurrent drivers with 100k orders daily efficiently

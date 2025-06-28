@@ -40,18 +40,19 @@ graph TB
     API --> Auth[Auth Service]
     API --> Box[Box Service]
     API --> Delivery[Delivery Service]
+    API --> Order[Order Service]
     
     Box --> DB[(PostgreSQL + PostGIS)]
     Delivery --> DB
+    Order --> DB
     Delivery --> BoxHW[Box Hardware API]
     
-    %% Async Messaging (Phase 1)
-    Delivery --> Queue[Message Queue]
+    %% Simple In-Memory Queue (Phase 1)
+    Delivery --> Queue[Simple Message Queue]
     Queue --> NotificationWorker[Notification Worker]
     Queue --> CleanupWorker[Cleanup Worker]
     
     NotificationWorker --> SMS[SMS Provider]
-    NotificationWorker --> Email[Email Provider]
     CleanupWorker --> DB
 ```
 
@@ -59,53 +60,59 @@ graph TB
 
 ### API Layer
 **Express.js Server** - Handles HTTP requests, authentication, validation, error handling
-- Single instance initially (horizontal scaling behind load balancer in Phase 2)
 - JWT-based authentication with role-based access control
-- Structured error responses
+- Structured error responses with custom error classes
+- Swagger documentation at `/api-docs`
 
 ### Box Service
 **Purpose:** Handle all box-related operations - finding, availability, compartment management
-- PostGIS geospatial queries with spatial indexes
-- Box status and compartment availability tracking
-- Search by location radius or box code
+- PostGIS geospatial queries for nearest box search
+- Box search by code functionality
+- Compartment availability checking with size filtering
 
 ### Delivery Service  
-**Purpose:** Handle delivery workflow - reservations, confirmations, order tracking
-- Compartment reservation with timeout mechanism (10 minutes)
-- Atomic operations to prevent race conditions
-- Integration with box hardware for compartment control
-- Order status management
+**Purpose:** Handle delivery workflow - reservations, delivery start/completion
+- Compartment reservation with timeout mechanism
+- Smart delivery start (auto-reserves if no existing reservation)
+- Atomic delivery completion with PIN generation
+- Integration with message queue for notifications
 
-### Message Queue & Workers
-**Purpose:** Handle async operations that shouldn't block API responses
-- **Message Queue** for job processing
-- **Notification Worker:** SMS/email delivery, retry logic, failure handling
-- **Cleanup Worker:** Expired reservation cleanup
-- **Dead Letter Queue:** Failed job handling and alerting
+### Order Service
+**Purpose:** Handle order listing and status management
+- Order listing with optional status filtering
+- Order status updates
+- Validation of order states and transitions
+
+### Message Queue & Workers (Demo Implementation)
+**Purpose:** Handle async operations without blocking API responses
+- **Simple In-Memory Queue** for job processing (demo only)
+- **Notification Worker:** Fake SMS notifications for customer pickup PINs
+- **Cleanup Worker:** Expired reservation cleanup every N minutes
+- Background processing with job status tracking
 
 ### Auth Service
 **Purpose:** Handle user authentication and authorization
 - OAuth2 flow with external identity provider
-- JWT token validation
-- Role-based permissions (driver, user)
+- JWT token validation and user context
+- Mock SSO implementation for testing
 
-## Complete Use Case Flows
+## Complete Use Case Flows (As Implemented)
 
 ### 1. Driver Authentication
 ```mermaid
 sequenceDiagram
     participant Driver
     participant API
-    participant AuthMock as Auth Service Mock
+    participant AuthService as Auth Service
     
     Driver->>API: GET /auth/login
-    API->>AuthMock: Redirect to company portal
-    AuthMock->>Driver: Login form + 2FA
-    Driver->>AuthMock: Credentials + 2FA code
-    AuthMock->>API: Redirect with auth code
-    API->>AuthMock: Exchange code for JWT
-    AuthMock->>API: Return JWT token
-    API->>Driver: Set auth cookie + redirect to app
+    API->>AuthService: Generate state & redirect URL
+    AuthService->>Driver: Redirect to OAuth provider
+    Driver->>AuthService: Complete OAuth flow
+    AuthService->>API: GET /auth/callback?code&state
+    API->>AuthService: Exchange code for JWT
+    AuthService->>API: Return JWT token
+    API->>Driver: JSON response with token
 ```
 
 ### 2. Find Nearest Boxes
@@ -116,12 +123,12 @@ sequenceDiagram
     participant BoxService as Box Service
     participant DB as PostgreSQL+PostGIS
     
-    Driver->>API: GET /boxes/nearest?lat=50.0&lng=14.4
-    API->>BoxService: Find nearest available boxes
-    BoxService->>DB: PostGIS spatial query
-    DB->>BoxService: Return boxes sorted by distance
-    BoxService->>API: Available boxes with compartment info
-    API->>Driver: JSON response with nearest boxes
+    Driver->>API: GET /boxes/nearest?lat=50.0&lng=14.4&radius=2000
+    API->>BoxService: findNearestBoxes(lat, lng, radius, size?)
+    BoxService->>DB: PostGIS spatial query with ST_DWithin
+    DB->>BoxService: Return boxes with calculated distances
+    BoxService->>API: Array of nearby boxes
+    API->>Driver: JSON response with boxes and distances
 ```
 
 ### 3. Box Search by Code
@@ -133,14 +140,14 @@ sequenceDiagram
     participant DB as PostgreSQL
     
     Driver->>API: GET /boxes/search?code=BOX123
-    API->>BoxService: Search by box code
+    API->>BoxService: searchBoxByCode(code)
     BoxService->>DB: SELECT by code
     DB->>BoxService: Return box details
-    BoxService->>API: Box info with availability
-    API->>Driver: Box details and available compartments
+    BoxService->>API: Box info with location
+    API->>Driver: Box details
 ```
 
-### 4. Package Delivery Workflow
+### 4. Complete Package Delivery Workflow
 ```mermaid
 sequenceDiagram
     participant Driver
@@ -149,55 +156,74 @@ sequenceDiagram
     participant DB as PostgreSQL
     participant BoxHW as Box Hardware Mock
     participant Queue as Message Queue
-    participant NotificationWorker as Notification Worker
+    participant Worker as Background Worker
     
-    Driver->>API: POST /deliveries/reserve (box_id, order_id, compartment_id)
-    API->>DeliveryService: Reserve compartment
+    %% Step 1: Reserve Compartment
+    Driver->>API: POST /deliveries/reserve {boxCode, orderId}
+    API->>DeliveryService: reserveCompartmentForOrder()
     
     DeliveryService->>DB: BEGIN TRANSACTION
-    DeliveryService->>DB: SELECT compartments FOR UPDATE
-    DeliveryService->>DB: Reserve compartment (N min timeout)
+    DeliveryService->>DB: Get order & required package size
+    DeliveryService->>DB: Cancel existing reservations
+    DeliveryService->>DB: Find available compartment by size
+    DeliveryService->>DB: Create reservation (10min timeout)
+    DeliveryService->>DB: Update compartment status = 'reserved'
     DeliveryService->>DB: COMMIT
     
-    DeliveryService->>API: Reservation confirmed
-    API->>Driver: Compartment reserved, proceed to box
+    DeliveryService->>API: Reservation created
+    API->>Driver: Compartment reserved successfully
     
-    Note over Driver: Driver travels to box (max N minutes)
+    %% Step 2: Start Delivery (Travel to box & open compartment)
+    Driver->>API: POST /deliveries/start {orderId, boxCode?}
+    API->>DeliveryService: startDeliveryForOrder()
     
-    Driver->>API: POST /deliveries/confirm (reservation_id, order_id)
-    API->>DeliveryService: Confirm delivery
-    DeliveryService->>BoxHW: Open compartment X
-    BoxHW->>DeliveryService: Compartment opened
+    alt Existing Reservation Found
+        DeliveryService->>BoxHW: openCompartment(boxId, compartmentNumber)
+        BoxHW->>DeliveryService: Compartment opened
+    else No Reservation - Auto Reserve
+        DeliveryService->>DeliveryService: reserveCompartmentForOrder()
+        DeliveryService->>BoxHW: openCompartment()
+        BoxHW->>DeliveryService: Compartment opened
+    end
     
-    Note over Driver: Driver places package, closes compartment
+    DeliveryService->>API: Compartment opened details
+    API->>Driver: Success - compartment open, place package
     
-    Driver->>API: POST /deliveries/complete (reservation_id)
-    API->>DeliveryService: Mark as delivered
+    %% Step 3: Complete Delivery
+    Driver->>API: POST /deliveries/complete {orderId}
+    API->>DeliveryService: completeDelivery()
+    
+    DeliveryService->>DB: BEGIN TRANSACTION
+    DeliveryService->>DB: Find active reservation
+    DeliveryService->>DB: Create delivery record
     DeliveryService->>DB: Update order status = 'delivered'
+    DeliveryService->>DB: Generate pickup PIN
+    DeliveryService->>DB: Update reservation status = 'completed'
+    DeliveryService->>DB: Update compartment status = 'occupied'
+    DeliveryService->>DB: COMMIT
     
-    %% Async operations
-    DeliveryService->>Queue: Publish 'delivery.completed' event
-    DeliveryService->>API: Delivery completed (immediate response)
-    API->>Driver: Success confirmation
+    %% Async notification
+    DeliveryService->>Queue: Enqueue notification job
+    DeliveryService->>API: Delivery completed
+    API->>Driver: Success with pickup PIN
     
     %% Background processing
-    Queue->>NotificationWorker: Process notification job
-    NotificationWorker->>NotificationWorker: Generate pickup PIN
-    NotificationWorker->>NotificationWorker: Send SMS with PIN
-    NotificationWorker->>DB: Log notification sent
+    Queue->>Worker: Process notification job
+    Worker->>Worker: Send fake SMS to customer
+    Worker->>Worker: Log notification sent
 ```
 
-## Database Schema
+## Database Schema (As Implemented)
 
 ```sql
--- Boxes table
-CREATE TABLE boxes (
-    id SERIAL PRIMARY KEY,
-    code VARCHAR(50) UNIQUE NOT NULL,
-    name VARCHAR(255) NOT NULL,
+-- Boxes table with PostGIS geography
+CREATE TABLE "Box" (
+    id TEXT PRIMARY KEY,
+    code TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
     address TEXT NOT NULL,
-    location GEOMETRY(POINT, 4326) NOT NULL,
-    status VARCHAR(20) DEFAULT 'active',
+    location geography(Point,4326) NOT NULL,
+    status TEXT DEFAULT 'active',
     total_compartments INTEGER DEFAULT 10,
     available_compartments INTEGER DEFAULT 10,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -207,40 +233,43 @@ CREATE TABLE boxes (
 -- Compartments table
 CREATE TABLE compartments (
     id SERIAL PRIMARY KEY,
-    box_id INTEGER REFERENCES boxes(id),
+    box_id TEXT REFERENCES "Box"(id),
     compartment_number INTEGER NOT NULL,
-    size VARCHAR(10) NOT NULL, -- S, M, L, XL, XXL
-    status VARCHAR(20) DEFAULT 'available', -- available, reserved, occupied
+    size TEXT NOT NULL, -- S, M, L, XL, XXL
+    status TEXT DEFAULT 'available', -- available, reserved, occupied
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(box_id, compartment_number)
 );
 
--- Orders table (simplified - external system manages full order data)
+-- Orders table
 CREATE TABLE orders (
     id SERIAL PRIMARY KEY,
-    external_order_id VARCHAR(100) UNIQUE NOT NULL,
-    customer_id VARCHAR(100) NOT NULL,
-    status VARCHAR(50) DEFAULT 'pending', -- pending, in_transit, delivered, picked_up
-    pickup_pin VARCHAR(10),
+    external_order_id TEXT UNIQUE NOT NULL,
+    customer_id TEXT NOT NULL,
+    status TEXT DEFAULT 'pending', -- pending, delivered, picked_up
+    pickup_pin TEXT,
+    package_size TEXT DEFAULT 'M', -- S, M, L, XL, XXL
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Reservations table - contains information about reserved compartments
+-- Reservations table
 CREATE TABLE compartment_reservations (
     id SERIAL PRIMARY KEY,
     compartment_id INTEGER REFERENCES compartments(id),
     order_id INTEGER REFERENCES orders(id),
-    driver_id VARCHAR(100) NOT NULL,
-    status VARCHAR(20) DEFAULT 'active', -- active, expired, completed
+    driver_id TEXT NOT NULL,
+    status TEXT DEFAULT 'active', -- active, expired, completed
     expires_at TIMESTAMP NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(order_id, status) -- Only one active reservation per order
 );
 
 -- Deliveries table
 CREATE TABLE deliveries (
     id SERIAL PRIMARY KEY,
-    reservation_id INTEGER REFERENCES reservations(id),
+    reservation_id INTEGER REFERENCES compartment_reservations(id),
     order_id INTEGER REFERENCES orders(id),
     delivered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     picked_up_at TIMESTAMP NULL
@@ -257,18 +286,67 @@ CREATE INDEX idx_orders_status ON orders (status);
 ## API Endpoints (Full System)
 
 ### Authentication
-- `GET /auth/login` - Initiate OAuth flow
-- `GET /auth/callback` - Handle OAuth callback
-- `POST /auth/logout` - Logout user
+- `GET /auth/login` - Initiate OAuth flow with state parameter
+- `GET /auth/callback` - Handle OAuth callback and token exchange
 
 ### Box Management
-- `GET /boxes/nearest?lat&lng&radius` - Find nearest boxes *(Primary Implementation)*
+- `GET /boxes/nearest?lat&lng&radius&size` - Find nearest boxes with PostGIS
 - `GET /boxes/search?code` - Search box by code
-- `GET /boxes/:id` - Get box details
-- `GET /boxes/:id/compartments` - Get available compartments
+- `GET /boxes/:boxCode/compartments` - Get available compartments for box
 
 ### Delivery Workflow
-- `POST /deliveries/reserve` - Reserve compartment
-- `POST /deliveries/confirm` - Confirm delivery and open compartment
-- `POST /deliveries/complete` - Complete delivery
-- `GET /deliveries/:id/status` - Check delivery status
+- `POST /deliveries/reserve` - Reserve compartment for order
+- `POST /deliveries/start` - Start delivery (opens compartment, auto-reserves if needed)
+- `POST /deliveries/complete` - Complete delivery and generate pickup PIN
+- `POST /deliveries/test-notification` - Test notification system (dev only)
+
+### Order Management
+- `GET /orders?status` - List orders with optional status filter
+- `PATCH /orders/:id/status` - Update order status
+
+### Mock SSO (Testing Only)
+- `GET /mock-sso/login` - Mock login form
+- `POST /mock-sso/token` - Mock token exchange
+- `POST /mock-sso/test-token` - Generate test JWT directly
+
+## Key Implementation Features
+
+### Geospatial Search
+- Uses PostGIS `ST_DWithin` for efficient radius-based box search
+- Spatial indexes for sub-second query performance
+- Distance calculation with `ST_Distance` for result ordering
+
+### Smart Delivery Flow
+- **Two-step process**: Reserve → Start → Complete
+- **Auto-reservation**: `/deliveries/start` can auto-reserve if no existing reservation
+- **Conflict prevention**: Atomic transactions prevent race conditions
+- **Timeout handling**: Reservations expire automatically after N minutes
+
+### Background Processing
+- **Simple in-memory queue** for Phase 1 (production would use Redis/RabbitMQ)
+- **Async notifications**: SMS notifications don't block API responses
+- **Auto-cleanup**: Expired reservations cleaned up every 2 seconds
+- **Job tracking**: Queue statistics and processing status
+
+### Error Handling
+- **Custom error classes**: ValidationError, NotFoundError, ConflictError
+- **Structured responses**: Consistent error format across all endpoints
+- **Transaction safety**: Database operations wrapped in transactions
+
+### Security & Validation
+- **JWT authentication**: Role-based access control (driver role required)
+- **CSRF protection**: OAuth state parameter validation
+- **Input validation**: Comprehensive parameter and request body validation
+- **Size validation**: Package size matching with compartment availability
+
+## Performance Considerations
+
+### Current Scale (100K orders/day)
+- **Single PostgreSQL instance** handles load easily
+- **PostGIS spatial indexes** provide sub-second box searches
+
+### Future Scaling (10x+ Growth)
+- **Database**: Add read replicas for box searches
+- **Queue**: Migrate to dedicated Message broker with multiple workers
+- **Caching**: Add Redis for frequently accessed box data
+- **Load balancing**: Multiple API server instances

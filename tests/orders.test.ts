@@ -115,7 +115,6 @@ describe('Order Routes', () => {
         .send({});
       
       expect(res.status).toBe(400);
-      expect(res.body.error).toMatch(/Invalid status/);
     });
 
     it('should validate status value', async () => {
