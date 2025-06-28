@@ -127,4 +127,27 @@ router.post('/token', (req: TokenRequest, res: Response) => {
   });
 });
 
+// POST /mock-sso/test-token - Simple test token generation (for testing only)
+router.post('/test-token', (req: Request, res: Response) => {
+  // Generate JWT token directly with default driver credentials
+  const token = jwt.sign(
+    { 
+      id: uuidv4(),
+      email: 'driver1@example.com',
+      role: 'driver'
+    },
+    authConfig.jwtSecret,
+    { expiresIn: authConfig.jwtExpiresIn } as SignOptions
+  );
+
+  res.json({
+    token: token,
+    user: {
+      id: uuidv4(),
+      email: 'driver1@example.com',
+      role: 'driver'
+    }
+  });
+});
+
 export default router; 

@@ -37,55 +37,90 @@ It migh take up to a minute to spin up all instances and seed the database.
 The API will be available at `http://localhost:3000`
 The swagger docs are available at `http://localhost:3000/api-docs`
 
-## 📊 Project Overview
+## 🔐 Authentication
 
-### What's Implemented ✅
-- **Geospatial Box Search**: Find nearest delivery boxes within specified radius
-- **PostGIS Integration**: Efficient spatial queries with proper indexing
-- **Docker Setup**: Complete containerization with PostGIS database
-- **Tests**: Integration tests with realistic geographical data
-- **Data Seeding**: 11,000+ delivery boxes across Czech Republic
+All endpoints require JWT authentication. For testing, use the mock SSO:
 
-## 🔌 API Documentation
-
-### Quick Reference
-
-**Base URL:** `http://localhost:3000`
-
-**Current Endpoints:**
-- `GET /boxes/nearest` - Find boxes within radius of location
-
-### Quick Example
 ```bash
-# Find boxes within 1km of Prague center
-curl "http://localhost:3000/boxes/nearest?lat=50.087&lng=14.421&radius=1000"
+# Get test token
+curl -X POST http://localhost:3000/mock-sso/test-token
+
+# Use token in requests
+curl -H "Authorization: Bearer <your-jwt-token>" \
+     "http://localhost:3000/boxes/nearest?lat=50.087&lng=14.421&radius=1000"
 ```
+
+## 📊 What's Implemented
+
+### Core Features ✅
+- **📍 Geospatial Box Search**: Find nearest delivery boxes with PostGIS indexing
+- **📦 Complete Delivery Workflow**: Reserve → Start → Complete delivery process  
+- **📋 Order Management**: List and update order statuses
+- **🔔 Background Processing**: Message queue for notifications and cleanup tasks
+- **🔐 JWT Authentication**: Role-based access control (Driver/Customer roles)
+- **📊 Real Data**: 11,000+ delivery boxes across Czech Republic
+
+### API Endpoints
+
+**Box Management**
+- `GET /boxes/nearest` - Find boxes within radius (lat, lng, radius, size filter)
+- `GET /boxes/search` - Search box by code
+- `GET /boxes/:boxCode/compartments` - Check compartment availability
+
+**Delivery Workflow**  
+- `POST /deliveries/reserve` - Reserve compartment for delivery
+- `POST /deliveries/start` - Open compartment (auto-reserves if needed)
+- `POST /deliveries/complete` - Complete delivery & generate pickup PIN
+
+**Order Management**
+- `GET /orders` - List orders (optional status filter)
+- `PATCH /orders/:id/status` - Update order status
+
+**Authentication**
+- `GET /auth/login` - OAuth2 login flow
+- `POST /mock-sso/test-token` - Get test JWT token (demo only)
 
 ## 🧪 Testing
 
-### Run Tests
+### Quick Test Examples
 ```bash
-# Run all tests
+# 1. Get authentication token
+TOKEN=$(curl -s -X POST http://localhost:3000/mock-sso/test-token | jq -r '.token')
+
+# 2. Find nearby boxes in Prague
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:3000/boxes/nearest?lat=50.087&lng=14.421&radius=2000"
+
+# 3. Start delivery workflow
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": 1, "boxCode": "BOX_001"}' \
+  http://localhost:3000/deliveries/start
+
+# 4. Complete delivery
+curl -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"orderId": 1}' \
+  http://localhost:3000/deliveries/complete
+```
+
+### Run Integration Tests
+```bash
 npm test
 ```
 
-## 🏗️ Project Structure
+## 🏗️ Architecture
 
-```
-ackee_box/
-├── src/
-│   ├── controllers/     # HTTP request handlers
-│   ├── services/        # Business logic layer
-│   ├── models/          # TypeScript interfaces
-│   ├── routes/          # API route definitions
-│   └── index.ts         # Application entry point
-├── tests/               # Integration tests
-├── prisma/
-│   ├── schema.prisma    # Database schema
-│   ├── migrations/      # Database migrations
-│   └── seed.ts          # Database seeding script
-├── boxes.csv            # Source data (11K+ boxes)
-├── docker-compose.yml   # Multi-container setup
-├── Dockerfile           # Application container
-└── architecture.md      # Detailed architecture analysis
-```
+- **Controllers**: HTTP request handlers with Swagger documentation
+- **Services**: Business logic layer 
+- **Repositories**: Data access layer with Prisma ORM
+- **Background Queue**: Simple message queue for notifications and cleanup
+- **PostGIS**: Spatial database for efficient geolocation queries
+- **Role-based Auth**: JWT with Driver/Customer role separation
+
+## 📈 Performance & Scalability
+
+- **Spatial Indexing**: PostGIS indexes for sub-second box searches
+- **Background Processing**: Async notification system with simple queue
+- **Auto-cleanup**: Expired reservations cleaned up automatically
+- **Production Ready**: Handles 10-20+ concurrent drivers efficiently
