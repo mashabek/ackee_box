@@ -6,7 +6,7 @@ A RESTful API for package delivery box management system, built with Node.js, Ty
 See [architecture.md](https://github.com/mashabek/ackee_box/blob/master/architecture.md) for a detailed requirements analysis of the first task.
 
 ### Metrics
-- **Time Spent:** ~6 hours
+- **Time Spent:** 9 hours
 - **Technologies Used:** Node.js, TypeScript, Express.js, Prisma, PostgreSQL, PostGIS, Docker, Jest
 - **AI Tools:** GPT 4.1 in Cursor IDE for basic code generation and writing tests.  
 Claude Sonnet 4 for generating mermaid diagrams
