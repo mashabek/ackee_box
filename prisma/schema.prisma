@@ -9,10 +9,75 @@ generator client {
 }
 
 model Box {
-  id      String  @id
-  code    String  @unique
-  name    String
-  address String
-  location Unsupported("geography(Point,4326)")
-  status  String?
+  id                     String                  @id
+  code                   String                  @unique
+  name                   String
+  address                String
+  location               Unsupported("geography(Point,4326)")
+  status                 String                  @default("active")
+  totalCompartments     Int                     @default(10) @map("total_compartments")
+  availableCompartments Int                     @default(10) @map("available_compartments")
+  createdAt             DateTime                @default(now()) @map("created_at")
+  updatedAt             DateTime?               @updatedAt @map("updated_at")
+  compartments          Compartment[]
+  
+  @@map("Box")
+}
+
+model Compartment {
+  id                Int                      @id @default(autoincrement())
+  boxId             String                   @map("box_id")
+  compartmentNumber Int                      @map("compartment_number")
+  size              String                   // S, M, L, XL, XXL
+  status            String                   @default("available") // available, reserved, occupied
+  createdAt         DateTime                 @default(now()) @map("created_at")
+  updatedAt         DateTime?                 @updatedAt @map("updated_at")
+  box               Box                      @relation(fields: [boxId], references: [id])
+  reservations      CompartmentReservation[]
+  
+  @@unique([boxId, compartmentNumber])
+  @@map("compartments")
+}
+
+model Order {
+  id              Int                      @id @default(autoincrement())
+  externalOrderId String                   @unique @map("external_order_id")
+  customerId      String                   @map("customer_id")
+  status          String                   @default("pending") // pending, delivered, picked_up
+  pickupPin       String?                  @map("pickup_pin")
+  packageSize     String                   @default("M") @map("package_size") // S, M, L, XL, XXL
+  createdAt       DateTime                 @default(now()) @map("created_at")
+  updatedAt       DateTime?                 @updatedAt @map("updated_at")
+  reservations    CompartmentReservation[]
+  deliveries      Delivery[]
+  
+  @@map("orders")
+}
+
+model CompartmentReservation {
+  id            Int         @id @default(autoincrement())
+  compartmentId Int         @map("compartment_id")
+  orderId       Int         @map("order_id")
+  driverId      String      @map("driver_id")
+  status        String      @default("active") // active, expired, completed
+  expiresAt     DateTime    @map("expires_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  compartment   Compartment @relation(fields: [compartmentId], references: [id])
+  order         Order       @relation(fields: [orderId], references: [id])
+  deliveries    Delivery[]
+  
+  @@unique([orderId, status], name: "unique_active_reservation_per_order")
+  @@map("compartment_reservations")
+}
+
+model Delivery {
+  id            Int                     @id @default(autoincrement())
+  reservationId Int?                    @map("reservation_id")
+  orderId       Int                     @map("order_id")
+  deliveredAt   DateTime                @default(now()) @map("delivered_at")
+  pickedUpAt    DateTime?               @map("picked_up_at")
+  reservation   CompartmentReservation? @relation(fields: [reservationId], references: [id])
+  order         Order                   @relation(fields: [orderId], references: [id])
+  
+  @@map("deliveries")
 } 
