@@ -40,10 +40,11 @@ The swagger docs are available at `http://localhost:3000/api-docs`
 
 ## 🔐 Authentication
 
-All endpoints require JWT authentication. For testing, use the mock SSO:
+All endpoints require JWT authentication. You can get a token in two ways:
 
+### Option 1: Direct Test Token (Quick)
 ```bash
-# Get test token
+# Get test token directly
 curl -X POST http://localhost:3000/mock-sso/test-token
 
 # Use token in requests
@@ -51,13 +52,26 @@ curl -H "Authorization: Bearer <your-jwt-token>" \
      "http://localhost:3000/boxes/nearest?lat=50.087&lng=14.421&radius=1000"
 ```
 
+### Option 2: Full OAuth Flow (Realistic)
+1. **Start OAuth flow**: Visit `http://localhost:3000/auth/login` in your browser
+2. **Complete login**: Fill in the mock SSO form and submit
+3. **Copy bearer token**: From the JSON response, copy the `access_token`
+4. **Use token**: Include in Authorization header for API requests
+
+```bash
+# Example with copied token
+curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." \
+     "http://localhost:3000/boxes/nearest?lat=50.087&lng=14.421&radius=1000"
+```
+
 ## 📊 What's Implemented
 
 ### Core Features ✅
 - **📍 Geospatial Box Search**: Find nearest delivery boxes with PostGIS indexing
+- **🔒 Compartment Reservation System**: Prevents race conditions when multiple drivers target the same box with limited compartments. Drivers can reserve specific compartments with automatic timeout, ensuring exclusive access during delivery.
 - **📦 Complete Delivery Workflow**: Reserve → Start → Complete delivery process  
 - **📋 Order Management**: List and update order statuses
-- **🔔 Background Processing**: Message queue for notifications and cleanup tasks.
+- **🔔 Background Processing**: Message queue for notifications and cleanup tasks. Includes automated cleanup job that monitors and releases expired reservations every 2 seconds.
 Simple in memory queue was used, but in real world scenario I'd prefer to use Pub/Sub 
 and Cloud Functions.
 - **🔐 JWT Authentication**: Role-based access control (Driver/Customer roles)
@@ -114,6 +128,7 @@ npm test
 ## 📈 Performance & Scalability
 
 - **Spatial Indexing**: PostGIS indexes for sub-second box searches
+- **Concurrent Safety**: Compartment reservation system with atomic transactions prevents race conditions between multiple drivers
 - **Background Processing**: Async notification system with simple queue
-- **Auto-cleanup**: Expired reservations cleaned up automatically
+- **Auto-cleanup**: Expired reservations cleaned up automatically every 2 seconds
 - **Scalable**: Handles 10-20+ concurrent drivers with 100k orders daily efficiently
