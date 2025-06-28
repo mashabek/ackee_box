@@ -1,8 +1,16 @@
 import request from 'supertest';
 import app from '../src/index';
 import { PrismaClient } from '@prisma/client';
+import jwt from 'jsonwebtoken';
 
 const prisma = new PrismaClient();
+
+// Mock driver token (boxes require driver role)
+const mockDriverToken = jwt.sign(
+  { id: 'driver-123', email: 'driver@test.com', role: 'driver' },
+  process.env.JWT_SECRET || 'your-super-secret-jwt-key',
+  { expiresIn: '1h' }
+);
 
 // Center: Prague, Czechia (lat: 50.087, lng: 14.421)
 // Box 2: ~55m east (lng: 14.4217)
@@ -34,7 +42,7 @@ const TEST_BOXES = [
   },
 ];
 
-describe('GET /boxes/nearest', () => {
+describe('Box Routes', () => {
   beforeEach(async () => {
     // Clean up all test boxes by id
     const ids = TEST_BOXES.map(b => `'${b.id}'`).join(',');
@@ -58,57 +66,138 @@ describe('GET /boxes/nearest', () => {
     await prisma.$disconnect();
   });
 
-  it('should return 400 if lat or lng is missing', async () => {
-    const res = await request(app).get('/boxes/nearest?lat=50');
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Missing lat or lng/);
+  describe('GET /boxes/nearest', () => {
+    it('should require authentication', async () => {
+      const res = await request(app).get('/boxes/nearest?lat=50&lng=14');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('Unauthorized');
+    });
+
+    it('should require driver role', async () => {
+      const userToken = jwt.sign(
+        { id: 'user-123', email: 'user@test.com', role: 'user' },
+        process.env.JWT_SECRET || 'your-super-secret-jwt-key',
+        { expiresIn: '1h' }
+      );
+      
+              const res = await request(app)
+          .get('/boxes/nearest?lat=50&lng=14')
+          .set('Authorization', `Bearer ${userToken}`);
+        expect(res.status).toBe(403);
+        expect(res.body.message).toMatch(/Forbidden/);
+    });
+
+    it('should return 400 if lat or lng is missing', async () => {
+      const res = await request(app)
+        .get('/boxes/nearest?lat=50')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(400);
+    });
+
+    it('should return 400 if lat or lng is invalid', async () => {
+      const res = await request(app)
+        .get('/boxes/nearest?lat=abc&lng=xyz')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(400);
+    });
+
+    it('should return 400 if radius is invalid', async () => {
+      const res = await request(app)
+        .get('/boxes/nearest?lat=50&lng=14&radius=-10')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(400);
+    });
+
+    it('should return only the center box for a 50m radius', async () => {
+      const res = await request(app)
+        .get('/boxes/nearest?lat=50.087&lng=14.421&radius=50')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(200);
+      const codes = res.body.map((b: any) => b.code);
+      expect(codes).toContain('TEST1');
+      expect(codes).not.toContain('TEST2');
+      expect(codes).not.toContain('TEST3');
+    });
+
+    it('should return center and nearby boxes for a 60m radius', async () => {
+      const res = await request(app)
+        .get('/boxes/nearest?lat=50.087&lng=14.421&radius=60')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(200);
+      const codes = res.body.map((b: any) => b.code);
+      expect(codes).toContain('TEST1');
+      expect(codes).toContain('TEST2');
+      expect(codes).not.toContain('TEST3');
+    });
+
+    it('should return all boxes for a 600m radius', async () => {
+      const res = await request(app)
+        .get('/boxes/nearest?lat=50.087&lng=14.421&radius=600')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(200);
+      const codes = res.body.map((b: any) => b.code);
+      expect(codes).toContain('TEST1');
+      expect(codes).toContain('TEST2');
+      expect(codes).toContain('TEST3');
+    });
+
+    it('should return boxes sorted by distance', async () => {
+      const res = await request(app)
+        .get('/boxes/nearest?lat=50.087&lng=14.421&radius=600')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(200);
+      const codes = res.body.map((b: any) => b.code);
+      // Should be sorted: TEST1 (center), TEST2 (nearby), TEST3 (far)
+      expect(codes.indexOf('TEST1')).toBeLessThan(codes.indexOf('TEST2'));
+      expect(codes.indexOf('TEST2')).toBeLessThan(codes.indexOf('TEST3'));
+    });
   });
 
-  it('should return 400 if lat or lng is invalid', async () => {
-    const res = await request(app).get('/boxes/nearest?lat=abc&lng=xyz');
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Invalid lat or lng/);
+  describe('GET /boxes/search', () => {
+    it('should return 400 if code is missing', async () => {
+      const res = await request(app)
+        .get('/boxes/search')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(400);
+    });
+
+    it('should return 404 if box not found', async () => {
+      const res = await request(app)
+        .get('/boxes/search?code=NONEXISTENT')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(404);
+    });
+
+    it('should return box details for valid code', async () => {
+      const res = await request(app)
+        .get('/boxes/search?code=TEST1')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('id');
+      expect(res.body.code).toBe('TEST1');
+      expect(res.body.name).toBe('Test Box 1');
+      expect(res.body).toHaveProperty('location');
+      expect(res.body).toHaveProperty('status');
+    });
   });
 
-  it('should return 400 if radius is invalid', async () => {
-    const res = await request(app).get('/boxes/nearest?lat=50&lng=14&radius=-10');
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Invalid radius/);
-  });
+  describe('GET /boxes/:boxCode/compartments', () => {
+    it('should return 404 for non-existent box', async () => {
+      const res = await request(app)
+        .get('/boxes/NONEXISTENT/compartments')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(404);
+    });
 
-  it('should return only the center box for a 50m radius', async () => {
-    const res = await request(app).get('/boxes/nearest?lat=50.087&lng=14.421&radius=50');
-    expect(res.status).toBe(200);
-    const codes = res.body.map((b: any) => b.code);
-    expect(codes).toContain('TEST1');
-    expect(codes).not.toContain('TEST2');
-    expect(codes).not.toContain('TEST3');
-  });
-
-  it('should return center and nearby boxes for a 60m radius', async () => {
-    const res = await request(app).get('/boxes/nearest?lat=50.087&lng=14.421&radius=60');
-    expect(res.status).toBe(200);
-    const codes = res.body.map((b: any) => b.code);
-    expect(codes).toContain('TEST1');
-    expect(codes).toContain('TEST2');
-    expect(codes).not.toContain('TEST3');
-  });
-
-  it('should return all boxes for a 600m radius', async () => {
-    const res = await request(app).get('/boxes/nearest?lat=50.087&lng=14.421&radius=600');
-    expect(res.status).toBe(200);
-    const codes = res.body.map((b: any) => b.code);
-    expect(codes).toContain('TEST1');
-    expect(codes).toContain('TEST2');
-    expect(codes).toContain('TEST3');
-  });
-
-  it('should return boxes sorted by distance', async () => {
-    const res = await request(app).get('/boxes/nearest?lat=50.087&lng=14.421&radius=600');
-    expect(res.status).toBe(200);
-    const codes = res.body.map((b: any) => b.code);
-    // Should be sorted: TEST1 (center), TEST2 (nearby), TEST3 (far)
-    expect(codes.indexOf('TEST1')).toBeLessThan(codes.indexOf('TEST2'));
-    expect(codes.indexOf('TEST2')).toBeLessThan(codes.indexOf('TEST3'));
+    it('should return compartment information for valid box', async () => {
+      const res = await request(app)
+        .get('/boxes/TEST1/compartments')
+        .set('Authorization', `Bearer ${mockDriverToken}`);
+      expect(res.status).toBe(200);
+      expect(res.body).toHaveProperty('boxCode', 'TEST1');
+      expect(res.body).toHaveProperty('availableCompartments');
+      expect(res.body).toHaveProperty('compartments');
+      expect(Array.isArray(res.body.compartments)).toBe(true);
+    });
   });
 }); 

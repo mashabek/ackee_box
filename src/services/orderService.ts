@@ -58,10 +58,16 @@ export const updateOrderStatus = async (id: number, status: string): Promise<Ord
       createdAt: updatedOrder.createdAt,
       updatedAt: updatedOrder.updatedAt || updatedOrder.createdAt
     };
-  } catch (error) {
+  } catch (error: any) {
     if (error instanceof ValidationError || error instanceof NotFoundError) {
       throw error;
     }
+    
+    // Handle Prisma P2025 error (record not found for update)
+    if (error.code === 'P2025') {
+      throw new NotFoundError('Order not found');
+    }
+    
     console.error('Error updating order status:', error);
     throw new InternalServerError('Failed to update order status');
   }
